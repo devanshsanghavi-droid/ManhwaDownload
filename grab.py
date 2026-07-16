@@ -531,19 +531,48 @@ def pad_chapter(number_str: str) -> str:
     return f"{i:04d}.{frac}"
 
 
-def write_cbz_files(out_dir: Path, group):
-    """Write one .cbz per chapter into a series folder (the layout manga
-    readers like Panels/YACReader expect: folder = series, file = chapter).
+def _fs_safe(name: str) -> str:
+    """Filesystem-safe but still human-readable: keep spaces, strip only the
+    characters that aren't legal in a filename."""
+    return re.sub(r'[/\\:*?"<>|]+', " ", name).strip() or "comic"
+
+
+def _comicinfo_xml(series: str, number: str, title: str, page_count: int, lang: str) -> str:
+    """ComicInfo.xml — the metadata standard readers (Panels, YACReader, Komga,
+    ComicRack) use to group issues into a series and order them. Without it a
+    folder of .cbz files reads as unrelated comics."""
+    def esc(s):
+        return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<ComicInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+        'xmlns:xsd="http://www.w3.org/2001/XMLSchema">\n'
+        f"  <Series>{esc(series)}</Series>\n"
+        f"  <Number>{esc(number)}</Number>\n"
+        f"  <Title>{esc(title)}</Title>\n"
+        f"  <PageCount>{page_count}</PageCount>\n"
+        f"  <LanguageISO>{esc(lang)}</LanguageISO>\n"
+        "  <Manga>Yes</Manga>\n"
+        "</ComicInfo>\n"
+    )
+
+
+def write_cbz_files(out_dir: Path, group, lang: str = "en"):
+    """Write one .cbz per chapter into a series folder (folder = series,
+    file = chapter). Each archive carries a ComicInfo.xml so readers group the
+    chapters into one ordered series instead of a pile of loose images.
     Returns (series_folder, [cbz_paths])."""
     series = group[0][1]["name"]
-    series_dir = out_dir / (sanitize(series) + " (cbz)")
+    series_dir = out_dir / _fs_safe(f"{series} (cbz)")
     series_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for folder, meta, saved in group:
         num = meta["number_str"]
-        cbz = series_dir / (sanitize(f"{series} - Chapter {pad_chapter(num)}") + ".cbz")
+        cbz = series_dir / (_fs_safe(f"{series} - Chapter {pad_chapter(num)}") + ".cbz")
+        info = _comicinfo_xml(series, num, f"Chapter {num}", len(saved), lang)
         # ZIP_STORED: the pages are already-compressed JPEGs, so don't re-deflate.
         with zipfile.ZipFile(cbz, "w", zipfile.ZIP_STORED) as z:
+            z.writestr("ComicInfo.xml", info)
             for i, n in enumerate(saved, 1):
                 z.write(folder / n, f"{i:03d}{Path(n).suffix}")
         paths.append(cbz)
@@ -705,7 +734,7 @@ def main():
             grp.sort(key=lambda r: r[1]["number"])
 
             if "cbz" in formats:
-                series_dir, cbzs = write_cbz_files(out_dir, grp)
+                series_dir, cbzs = write_cbz_files(out_dir, grp, args.lang)
                 total = sum(mb(p) for p in cbzs)
                 print(f"\n✓ phone · CBZ (best for manga apps like Panels):")
                 print(f"    AirDrop this folder, then import it in Panels/YACReader "

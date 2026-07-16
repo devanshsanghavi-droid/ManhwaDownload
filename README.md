@@ -137,12 +137,22 @@ Step by step, from download to reading in Panels:
    also select the `(cbz)` folder itself — its `.cbz` files then show up as the
    chapters.)* Adding more series later is automatic: just drop new `(cbz)`
    folders into that same library folder.
-5. **Read.** Open the series, tap chapter 1. In the reader's settings pick
-   **Webtoon** (or "Continuous vertical") mode for the seamless top-to-bottom
-   scroll manhwa is meant for. Pinch to zoom, swipe between chapters, no browser
-   toolbars, and it remembers where you left off.
+5. **Read — and set two things the first time:**
+   - **Reading mode = Webtoon / Continuous vertical.** Panels defaults to *paged*
+     (one image per swipe), which makes a webtoon feel like "a bunch of images."
+     In the reader, open its settings and switch to **Webtoon** (a.k.a.
+     continuous/vertical scroll) for the seamless top-to-bottom read manhwa is
+     meant for. Pinch to zoom; it remembers where you left off.
+   - **Chapters flow automatically.** Each `.cbz` embeds a `ComicInfo.xml` naming
+     the series and chapter number, so Panels groups them into one series in
+     order and moves you from the end of one chapter into the next.
 6. **Sanity check before the flight:** turn on Airplane Mode and open a chapter —
    if it loads, your files are truly local and offline-ready.
+
+> **Import the `.cbz` files, not the raw `-chapter-N/` image folders.** The image
+> folders are for the desktop `reader.html`. Feeding Panels the loose images
+> gives you ungrouped, paged-looking comics; the `.cbz` files (with their
+> metadata) are what make it read as one continuous series.
 
 ### PDF + Apple Books — zero install
 
