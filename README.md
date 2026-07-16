@@ -119,11 +119,25 @@ grab "<title-url>" --chapters 1-10 --phone cbz --merge --out ~/Manhwa
 
 This makes a single `.cbz` like `Series - Ch 1-10.cbz` containing every chapter's
 pages in order. Drag that **one file** into Panels (via the Files app or a
-cable), open it, set Webtoon mode once, and read the whole run as one continuous
-scroll. Nothing to group, one thing to move. (Downside: no chapter list — it's
-one long comic. Drop `--merge` if you want per-chapter navigation instead.)
+cable), open it, set Webtoon mode once (see below), and read the whole run as one
+continuous scroll. Nothing to group, one thing to move. (Downside: no chapter
+list — it's one long comic. Drop `--merge` if you want per-chapter navigation
+instead.)
 
 The per-chapter version (below) keeps chapters separate as a browsable series.
+
+> **⚠️ If it reads as pages you swipe through, not a downward scroll — that's a
+> Panels setting, not the file.** A `.cbz` can't force a reading mode. While
+> reading, **tap the middle of the screen** to show the toolbar → tap the
+> reading-settings icon (top bar) → choose **Webtoon** (fit-to-width, gapless,
+> continuous vertical scroll). To make it the default for everything, go to the
+> Panels library → **Settings (gear) → Reading → default reading mode → Webtoon**.
+> If you see thin gaps between pages, turn off the page-gap/spacing option in that
+> same panel.
+
+**Progress is saved automatically** — Panels remembers your exact scroll position
+per comic and reopens right where you stopped (and can sync it across devices via
+its iCloud setting).
 
 Step by step, from download to reading in Panels:
 
@@ -149,11 +163,11 @@ Step by step, from download to reading in Panels:
    chapters.)* Adding more series later is automatic: just drop new `(cbz)`
    folders into that same library folder.
 5. **Read — and set two things the first time:**
-   - **Reading mode = Webtoon / Continuous vertical.** Panels defaults to *paged*
-     (one image per swipe), which makes a webtoon feel like "a bunch of images."
-     In the reader, open its settings and switch to **Webtoon** (a.k.a.
-     continuous/vertical scroll) for the seamless top-to-bottom read manhwa is
-     meant for. Pinch to zoom; it remembers where you left off.
+   - **Reading mode = Webtoon.** Panels defaults to *paged* (swipe one image at a
+     time). While reading, tap the middle of the screen → reading-settings icon in
+     the top bar → **Webtoon** for the seamless top-to-bottom scroll (details in
+     the callout above). Set it as the default in Panels **Settings → Reading** so
+     you only do this once. Pinch to zoom; **progress is saved automatically**.
    - **Chapters flow automatically.** Each `.cbz` embeds a `ComicInfo.xml` naming
      the series and chapter number, so Panels groups them into one series in
      order and moves you from the end of one chapter into the next.
