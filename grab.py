@@ -196,6 +196,10 @@ def download_chapter(ctx, origin: str, chap_id: str, out_dir: Path):
                 if r.ok:
                     ext = ext_from_url_or_ct(u, r.headers.get("content-type", ""))
                     fname = f"{i:03d}{ext}"
+                    # Re-create the folder each write in case something outside the
+                    # tool removed it mid-run (cloud sync / "clean up Downloads" /
+                    # antivirus). exist_ok makes this a cheap no-op normally.
+                    folder.mkdir(parents=True, exist_ok=True)
                     (folder / fname).write_bytes(r.body())
                     saved.append(fname)
                     ok = True
@@ -595,7 +599,7 @@ def main():
     if "none" in formats or args.no_phone:
         formats = set()
 
-    out_dir = Path(args.out).expanduser()
+    out_dir = Path(args.out).expanduser().resolve()
     first = args.urls[0]
     origin = "{0.scheme}://{0.netloc}".format(urlparse(first))
 

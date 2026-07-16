@@ -114,14 +114,28 @@ them cache offline). Roughly 7–15 MB per chapter, so big batches make big file
 grab "<title-url>" --chapters 1-10 --phone cbz
 ```
 
-1. You get a folder like `The Stellar Swordmaster (cbz)/` with one `.cbz` per
-   chapter.
-2. Install **[Panels](https://apps.apple.com/app/panels/id1236195657)** (free,
-   iOS) — or YACReader on Android/desktop.
-3. AirDrop the whole folder to your phone (**Save to Files**), then in Panels add
-   that folder as a series. Each `.cbz` shows up as a chapter.
-4. Read with continuous vertical scroll, pinch zoom, real chapter list, and **no
-   toolbars** — it's a proper reader, not a browser.
+Step by step, from download to reading in Panels:
+
+1. **Download.** Run the command above. You get a folder next to your chapters
+   named after the series with `(cbz)` on the end, e.g.
+   `Reincarnation of the Veteran Soldier (cbz)/`, holding one `.cbz` per chapter
+   (`... - Chapter 0001.cbz`, `Chapter 0002.cbz`, …).
+2. **Install Panels** on the iPhone — [App Store link](https://apps.apple.com/app/panels/id1236195657)
+   (free). *(Android/desktop: use YACReader or the CBZ reader of your choice —
+   the steps are the same idea.)*
+3. **Get the folder onto the phone.** In Finder, right-click the whole `(cbz)`
+   folder → **Share → AirDrop** → your iPhone. On the phone tap **Accept →
+   Save to Files**, and put it somewhere like *On My iPhone → Panels* or just
+   *Downloads*. (No AirDrop? Copy the folder into iCloud Drive while on wifi and
+   let it download to the phone before you fly.)
+4. **Import into Panels.** Open Panels → tap the **+** (Add) button →
+   **Import from Files** (or **Files**) → browse to the folder you saved →
+   select it (or select all the `.cbz` files inside). Panels groups them into one
+   series, each `.cbz` a chapter, in order.
+5. **Read.** Open the series, tap chapter 1. In Settings/appearance pick
+   **Webtoon** (or "Continuous vertical") reading mode for the seamless top-to-
+   bottom scroll manhwa is meant for. Pinch to zoom, swipe between chapters, and
+   there are no browser toolbars — it remembers where you left off.
 
 ### PDF + Apple Books — zero install
 
@@ -157,6 +171,13 @@ The default. One self-contained `.html`; open it in any browser, scroll to read,
   — not 1, 1, 2, 2, 3, 3.
 - **Cloudflare block / zero downloads:** re-run with `--headed` and, if a
   challenge appears, solve it once in the window.
+- **`No such file or directory` while *saving* a page:** the chapter folder was
+  deleted mid-download by something outside the tool — usually a cloud-sync
+  client (iCloud Drive / Dropbox / Google Drive) evicting files, a storage
+  cleaner (CleanMyMac & co.), or antivirus. The tool now recreates the folder on
+  every write so a run won't die from it, but for a smooth download point `--out`
+  at a plain **local, non-synced** folder (e.g. `~/Manhwa`, not a Downloads or
+  Desktop folder that's backed by iCloud).
 - **"API response shape changed" or similar:** MangaFire changed its internal
   API. The tool depends on `/api/titles/<id>/chapters` and
   `/api/chapters/<id>`; if the site redesigns, those calls need updating.
