@@ -31,7 +31,7 @@ git clone git@github.com:devanshsanghavi-droid/ManhwaDownload.git
 cd ManhwaDownload
 
 python3 -m venv .venv
-.venv/bin/pip install playwright img2pdf
+.venv/bin/pip install playwright requests img2pdf
 .venv/bin/playwright install chromium
 ```
 
@@ -75,6 +75,19 @@ Give it the **title** URL (the series page) and a `--chapters` range:
 | `1,3,7-9`       | chapters 1, 3, and 7 through 9   |
 | `latest`        | only the newest chapter          |
 
+**Long runs (whole series).** Pages download in parallel (8 at a time), so a
+chapter is seconds, not minutes. A big range is automatically split into groups
+of 10 chapters, and **each group is written to disk as soon as it finishes** — so
+if a 200-chapter run dies at chapter 137, everything up to chapter 130 is already
+saved and readable. With `--merge` you get one continuous `.cbz` per group
+(`Ch 1-10.cbz`, `Ch 11-20.cbz`, …), which also keeps each file a sane size for
+Panels. Tune the chunk with `--group-size N` (or `--group-size 0` for a single
+file covering the whole range):
+
+```bash
+grab "<title-url>" --chapters 1-206 --phone cbz --merge --out ~/Manhwa
+```
+
 ### Download one or more specific chapter pages
 
 Paste **chapter** URLs directly (no `--chapters` needed):
@@ -95,7 +108,9 @@ Paste **chapter** URLs directly (no `--chapters` needed):
 | ------------- | ------------------------------------------------------------------- |
 | `--chapters`  | which chapters to grab (see table above); requires a **title** URL  |
 | `--phone ...` | phone format(s): `html` (default), `cbz`, `pdf`, `all`, or `none`. List several, e.g. `--phone cbz pdf` |
-| `--merge`     | with `--phone cbz`: combine the whole batch into **one** `.cbz` (single continuous comic) instead of one per chapter |
+| `--merge`     | with `--phone cbz`: combine each group into **one** `.cbz` (single continuous comic) instead of one per chapter |
+| `--group-size N` | split a long run into groups of N chapters, each written as its own file(s) the moment it finishes — a failsafe (default **10**; `0` = one group / one file for the whole range) |
+| `--workers N` | how many page images to download in parallel (default **8**)        |
 | `--lang`      | chapter language, default `en`                                      |
 | `--no-phone`  | make no phone file at all (same as `--phone none`)                  |
 | `--headed`    | run a **visible** browser — use if a headless run hits Cloudflare   |

@@ -35,9 +35,11 @@ import re
 import sys
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlparse
 
+import requests
 from playwright.sync_api import sync_playwright
 
 USER_AGENT = (
@@ -169,8 +171,24 @@ def dedupe_versions(chapters):
     return [best[k][1] for k in sorted(best)]
 
 
-def download_chapter(ctx, origin: str, chap_id: str, out_dir: Path):
-    """Download one chapter. Returns (folder, meta dict, saved names) or None."""
+def make_session(ctx):
+    """A plain requests session for downloading page images. The image CDN only
+    checks the Referer, not the Cloudflare cookies, so this can run many requests
+    in parallel — far faster than one-at-a-time through Playwright."""
+    s = requests.Session()
+    s.headers.update({"User-Agent": USER_AGENT})
+    try:  # carry cookies too, harmless (only sent to matching domains)
+        for c in ctx.cookies():
+            s.cookies.set(c.get("name"), c.get("value"),
+                          domain=(c.get("domain") or "").lstrip("."))
+    except Exception:
+        pass
+    return s
+
+
+def download_chapter(ctx, session, origin: str, chap_id: str, out_dir: Path, workers: int = 8):
+    """Download one chapter, fetching its pages in parallel.
+    Returns (folder, meta dict, saved names) or None."""
     d = api_get(ctx, f"{origin}/api/chapters/{chap_id}",
                 f"{origin}/title/x/chapter/{chap_id}")
     try:
@@ -185,34 +203,37 @@ def download_chapter(ctx, origin: str, chap_id: str, out_dir: Path):
     name = data.get("title", {}).get("name", slug)
     folder = out_dir / sanitize(f"{slug}-chapter-{number}")
     folder.mkdir(parents=True, exist_ok=True)
-
     print(f"→ {name} — chapter {number}: {len(pages)} pages")
-    saved = []
-    for i, u in enumerate(pages, 1):
-        ok = False
+
+    def fetch(idx, url):
         for attempt in range(3):
             try:
-                r = ctx.request.get(u, headers={"Referer": origin + "/"}, timeout=30_000)
-                if r.ok:
-                    ext = ext_from_url_or_ct(u, r.headers.get("content-type", ""))
-                    fname = f"{i:03d}{ext}"
-                    # Re-create the folder each write in case something outside the
-                    # tool removed it mid-run (cloud sync / "clean up Downloads" /
-                    # antivirus). exist_ok makes this a cheap no-op normally.
-                    folder.mkdir(parents=True, exist_ok=True)
-                    (folder / fname).write_bytes(r.body())
-                    saved.append(fname)
-                    ok = True
-                    break
-                print(f"\n  ! page {i}: HTTP {r.status} (attempt {attempt + 1})")
-            except Exception as e:
-                print(f"\n  ! page {i}: {e} (attempt {attempt + 1})")
-            time.sleep(1.0 + attempt)
-        if not ok:
-            print(f"\n  ✗ giving up on page {i}")
-        print(f"\r  {len(saved)}/{len(pages)}", end="", flush=True)
-        time.sleep(0.2)  # be polite to the CDN
+                r = session.get(url, headers={"Referer": origin + "/"}, timeout=30)
+                if r.status_code == 200 and r.content:
+                    return idx, url, r.content, r.headers.get("content-type", "")
+            except Exception:
+                pass
+            time.sleep(0.5 * (attempt + 1))
+        return idx, url, None, None
+
+    saved, done = [], 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = [ex.submit(fetch, i, u) for i, u in enumerate(pages, 1)]
+        for fut in as_completed(futures):
+            i, u, content, ct = fut.result()
+            done += 1
+            if content:
+                # Re-create the folder each write in case something outside the tool
+                # removed it mid-run (cloud sync / cleaner / antivirus). Cheap no-op.
+                folder.mkdir(parents=True, exist_ok=True)
+                fname = f"{i:03d}{ext_from_url_or_ct(u, ct)}"
+                (folder / fname).write_bytes(content)
+                saved.append(fname)
+            else:
+                print(f"\n  ✗ page {i} failed after retries")
+            print(f"\r  {done}/{len(pages)}", end="", flush=True)
     print()
+    saved.sort()  # completion order is arbitrary; keep pages in reading order
     meta = {"slug": slug, "number": float(data.get("number", 0)),
             "number_str": number, "name": name}
     return folder, meta, saved
@@ -617,6 +638,65 @@ def write_pdf_bundle(out_dir: Path, group) -> Path:
     return out
 
 
+def _mb(p: Path) -> float:
+    return p.stat().st_size / 1_000_000
+
+
+def write_group_outputs(results, formats, merge, lang, out_dir):
+    """Write per-chapter desktop readers + the requested phone format(s) for one
+    group of downloaded chapters. Called per group so finished groups are on disk
+    even if a later group fails."""
+    results = sorted(results, key=lambda r: r[1]["number"])
+
+    # per-chapter desktop readers, prev/next linked within the group
+    for i, (folder, meta, saved) in enumerate(results):
+        title = f"{meta['name']} — Chapter {meta['number_str']}"
+        prev = next_ = None
+        if i > 0:
+            pf, pm, _ = results[i - 1]
+            prev = (f"../{pf.name}/reader.html", f"Ch. {pm['number_str']}")
+        if i < len(results) - 1:
+            nf, nm, _ = results[i + 1]
+            next_ = (f"../{nf.name}/reader.html", f"Ch. {nm['number_str']}")
+        write_reader(folder, saved, title, prev, next_)
+
+    if not formats:
+        return
+
+    by_series = {}
+    for res in results:
+        by_series.setdefault(res[1]["slug"], []).append(res)
+
+    for grp in by_series.values():
+        grp.sort(key=lambda r: r[1]["number"])
+        span = grp[0][1]["number_str"]
+        if len(grp) > 1:
+            span += f"-{grp[-1][1]['number_str']}"
+
+        if "cbz" in formats:
+            if merge:
+                cbz = write_merged_cbz(out_dir, grp, lang)
+                print(f"  ✓ CBZ (Panels, one continuous file) Ch {span}: "
+                      f"{cbz.resolve()}  [{_mb(cbz):.0f} MB]")
+            else:
+                series_dir, cbzs = write_cbz_files(out_dir, grp, lang)
+                print(f"  ✓ CBZ (Panels series) Ch {span}: {series_dir.resolve()}/  "
+                      f"[{len(cbzs)} files, {sum(_mb(p) for p in cbzs):.0f} MB]")
+
+        if "pdf" in formats:
+            try:
+                pdf = write_pdf_bundle(out_dir, grp)
+                print(f"  ✓ PDF (Books) Ch {span}: {pdf.resolve()}  [{_mb(pdf):.0f} MB]")
+            except ImportError:
+                print("  ! PDF skipped: img2pdf not installed (pip install img2pdf).",
+                      file=sys.stderr)
+
+        if "html" in formats:
+            bundle = write_combined_phone_file(out_dir, grp)
+            note = "  (large — may open slowly)" if _mb(bundle) > 60 else ""
+            print(f"  ✓ HTML Ch {span}: {bundle.resolve()}  [{_mb(bundle):.0f} MB]{note}")
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -635,8 +715,14 @@ def main():
                          "cbz (manga-reader apps like Panels), pdf (Apple Books), "
                          "all, or none")
     ap.add_argument("--merge", action="store_true",
-                    help="for cbz: combine the whole batch into ONE .cbz "
+                    help="for cbz: combine each group into ONE .cbz "
                          "(a single continuous comic) instead of one per chapter")
+    ap.add_argument("--group-size", type=int, default=10, metavar="N",
+                    help="split the run into groups of N chapters, each written as "
+                         "its own file(s) as it finishes — a failsafe for long runs "
+                         "(default 10; use 0 for a single group / one file)")
+    ap.add_argument("--workers", type=int, default=8, metavar="N",
+                    help="how many page images to download in parallel (default 8)")
     ap.add_argument("--no-phone", action="store_true",
                     help="alias for --phone none")
     ap.add_argument("--headed", action="store_true",
@@ -714,79 +800,32 @@ def main():
                              f"add --chapters (e.g. --chapters 100-105).")
                 chap_ids.append(cid)
 
-        # ---- download ------------------------------------------------------
-        results = []  # (folder, meta, saved)
-        for k, cid in enumerate(chap_ids, 1):
-            print(f"\n[{k}/{len(chap_ids)}]", end=" ")
-            res = download_chapter(ctx, origin, cid, out_dir)
-            if res and res[2]:
-                results.append(res)
-            time.sleep(1.0)  # pause between chapters
+        # ---- download in groups, writing each group as it finishes ---------
+        session = make_session(ctx)
+        gsize = args.group_size if args.group_size and args.group_size > 0 else len(chap_ids)
+        chunks = [chap_ids[i:i + gsize] for i in range(0, len(chap_ids), gsize)]
+        total_ok, n = 0, 0
+        for gi, chunk in enumerate(chunks, 1):
+            if len(chunks) > 1:
+                print(f"\n===== group {gi}/{len(chunks)} — {len(chunk)} chapters =====")
+            group_results = []
+            for cid in chunk:
+                n += 1
+                print(f"\n[{n}/{len(chap_ids)}]", end=" ")
+                res = download_chapter(ctx, session, origin, cid, out_dir, args.workers)
+                if res and res[2]:
+                    group_results.append(res)
+                time.sleep(0.3)  # brief pause between chapters
+            if group_results:
+                total_ok += len(group_results)
+                print()  # newline before this group's output list
+                write_group_outputs(group_results, formats, args.merge, args.lang, out_dir)
 
         browser.close()
 
-    if not results:
+    if total_ok == 0:
         sys.exit("\n✗ Nothing downloaded.")
-
-    # ---- per-chapter desktop readers (with prev/next links) ---------------
-    results.sort(key=lambda r: r[1]["number"])
-    for i, (folder, meta, saved) in enumerate(results):
-        title = f"{meta['name']} — Chapter {meta['number_str']}"
-        prev = next_ = None
-        if i > 0:
-            pf, pm, _ = results[i - 1]
-            prev = (f"../{pf.name}/reader.html", f"Ch. {pm['number_str']}")
-        if i < len(results) - 1:
-            nf, nm, _ = results[i + 1]
-            next_ = (f"../{nf.name}/reader.html", f"Ch. {nm['number_str']}")
-        write_reader(folder, saved, title, prev, next_)
-
-    print(f"\n✓ {len(results)} chapter(s) downloaded to {out_dir.resolve()}")
-    print(f"✓ computer: open {results[0][0].resolve() / 'reader.html'}")
-
-    # ---- phone outputs, grouped by series, in the requested format(s) ------
-    if formats:
-        groups = {}
-        for res in results:
-            groups.setdefault(res[1]["slug"], []).append(res)
-
-        def mb(p):
-            return p.stat().st_size / 1_000_000
-
-        for grp in groups.values():
-            grp.sort(key=lambda r: r[1]["number"])
-
-            if "cbz" in formats:
-                print(f"\n✓ phone · CBZ (best for manga apps like Panels):")
-                if args.merge:
-                    cbz = write_merged_cbz(out_dir, grp, args.lang)
-                    print(f"    ONE file, all chapters, continuous scroll — "
-                          f"drag it into Panels and read:")
-                    print(f"    {cbz.resolve()}  [{mb(cbz):.0f} MB]")
-                else:
-                    series_dir, cbzs = write_cbz_files(out_dir, grp, args.lang)
-                    total = sum(mb(p) for p in cbzs)
-                    print(f"    AirDrop this folder, then import it in "
-                          f"Panels/YACReader as a series (or add --merge for one file):")
-                    print(f"    {series_dir.resolve()}/  "
-                          f"[{len(cbzs)} chapter files, {total:.0f} MB]")
-
-            if "pdf" in formats:
-                try:
-                    pdf = write_pdf_bundle(out_dir, grp)
-                    print(f"\n✓ phone · PDF (open in Apple Books):")
-                    print(f"    AirDrop it, then tap Share → Save to Books:")
-                    print(f"    {pdf.resolve()}  [{mb(pdf):.0f} MB]")
-                except ImportError:
-                    print("\n! PDF skipped: img2pdf isn't installed. "
-                          "Run:  .venv/bin/pip install img2pdf", file=sys.stderr)
-
-            if "html" in formats:
-                bundle = write_combined_phone_file(out_dir, grp)
-                note = "  (large — may open slowly)" if mb(bundle) > 60 else ""
-                print(f"\n✓ phone · HTML (self-contained, opens in any browser):")
-                print(f"    {bundle.resolve()}  "
-                      f"[{mb(bundle):.0f} MB, {len(grp)} chapters]{note}")
+    print(f"\n✓ done — {total_ok} chapter(s) saved to {out_dir.resolve()}")
 
 
 if __name__ == "__main__":
