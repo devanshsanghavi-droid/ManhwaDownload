@@ -4,6 +4,29 @@ A small command-line tool that downloads manhwa/webtoon chapters from
 **mangafire.to** for **offline reading** — on a laptop or a phone. Handy for
 flights or anywhere without signal.
 
+## Quick start (the recommended path)
+
+After the one-time [setup](#setup-one-time), the happy path for reading on an
+iPhone in **Panels**:
+
+```bash
+# whole series, into a local folder, as continuous-scroll .cbz files
+grab "https://mangafire.to/title/<slug>" --chapters 1-999 --phone cbz --merge --out ~/Manhwa
+```
+
+Then:
+1. Move the resulting `.cbz` files from `~/Manhwa` to the phone (AirDrop, or a
+   USB cable → Finder → Panels' Files). **Not iCloud** unless you have space.
+2. In Panels: **Choose library** → your folder. Open a comic, set reading mode to
+   **Webtoon** once (tap screen → reading settings), and it's a smooth vertical
+   scroll that remembers your place.
+
+Chapters download 8 pages at a time and save in groups of 10 as they finish, so a
+long series is fast and crash-safe. Details, other formats (PDF/HTML), and
+troubleshooting are below.
+
+---
+
 **On the computer:** every chapter folder gets a `reader.html` — solid black
 background, one continuous vertical strip, zoom with `+` / `-` / `Ctrl`+scroll
 (`0` = fit width), and prev/next links to the neighbouring chapters. It
@@ -14,7 +37,7 @@ bundle the whole batch you asked for:
 
 | `--phone` | What you get | Read it with | Best for |
 | --------- | ------------ | ------------ | -------- |
-| `cbz` *(recommended)* | one `.cbz` per chapter in a series folder | a manga reader app — **[Panels](https://apps.apple.com/app/panels/id1236195657)** (iOS), YACReader | webtoons: continuous vertical scroll, real chapters, pinch zoom, no toolbars |
+| `cbz` *(recommended)* | one `.cbz` per chapter — or one continuous `.cbz` per group with `--merge` | a manga reader app — **[Panels](https://apps.apple.com/app/panels/id1236195657)** (iOS), YACReader | webtoons: continuous vertical scroll, real chapters, pinch zoom, no toolbars |
 | `pdf` | one PDF for the whole batch | **Apple Books** | zero-install, chrome-free, remembers your page |
 | `html` | one self-contained `.html` for the batch | any browser | no apps at all; double-tap for a zoom bar (`−`/`+`/Fit) + ☰ chapter menu |
 
@@ -244,8 +267,10 @@ The default. One self-contained `.html`; open it in any browser, scroll to read,
 MangaFire renders its reader with JavaScript and serves the page list from an
 internal JSON API rather than in the initial HTML. The tool opens the site once
 in a real (Playwright-driven) Chromium to clear Cloudflare, then reuses that
-browser session to call the chapter APIs and download each page with the right
-`Referer` header. No scraping of the rendered DOM, so page order is exact.
+session to call the chapter APIs. Page images live on a separate CDN that only
+checks the `Referer` (not the Cloudflare cookies), so they're fetched in parallel
+with a plain HTTP client — fast, and with exact page order preserved from the API
+rather than scraped from the DOM.
 
 ## Legal
 
