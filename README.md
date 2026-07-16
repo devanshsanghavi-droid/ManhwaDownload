@@ -4,22 +4,21 @@ A small command-line tool that downloads manhwa/webtoon chapters from
 **mangafire.to** for **offline reading** — on a laptop or a phone. Handy for
 flights or anywhere without signal.
 
-You get two things:
+**On the computer:** every chapter folder gets a `reader.html` — solid black
+background, one continuous vertical strip, zoom with `+` / `-` / `Ctrl`+scroll
+(`0` = fit width), and prev/next links to the neighbouring chapters. It
+remembers your zoom and scroll position.
 
-- **Per chapter, on the computer:** each chapter folder has a `reader.html` —
-  solid black background, one continuous vertical strip, zoom with `+` / `-` /
-  `Ctrl`+scroll (`0` = fit width), and prev/next links to the neighbouring
-  chapters. It remembers your zoom and scroll position.
-- **For the phone, one file for the whole batch:** when you download several
-  chapters, they're bundled into a **single** self-contained `.html` (images
-  embedded) that sits next to the chapter folders, e.g.
-  `the-stellar-swordmaster-ch1-3.html`. Send that *one* file to your phone and
-  everything is in it. It has:
-  - a black background and continuous vertical scroll,
-  - **on-screen zoom controls** — double-tap anywhere to show/hide a bar with
-    `−` / `+` / **Fit**, plus native pinch-to-zoom,
-  - a **☰ chapter menu** to jump between chapters,
-  - remembered zoom and reading position.
+**On the phone:** pick a format with `--phone` (default `html`). All of them
+bundle the whole batch you asked for:
+
+| `--phone` | What you get | Read it with | Best for |
+| --------- | ------------ | ------------ | -------- |
+| `cbz` *(recommended)* | one `.cbz` per chapter in a series folder | a manga reader app — **[Panels](https://apps.apple.com/app/panels/id1236195657)** (iOS), YACReader | webtoons: continuous vertical scroll, real chapters, pinch zoom, no toolbars |
+| `pdf` | one PDF for the whole batch | **Apple Books** | zero-install, chrome-free, remembers your page |
+| `html` | one self-contained `.html` for the batch | any browser | no apps at all; double-tap for a zoom bar (`−`/`+`/Fit) + ☰ chapter menu |
+
+Use several at once with `--phone cbz pdf`, or `--phone all`.
 
 ---
 
@@ -32,12 +31,13 @@ git clone git@github.com:devanshsanghavi-droid/ManhwaDownload.git
 cd ManhwaDownload
 
 python3 -m venv .venv
-.venv/bin/pip install playwright
+.venv/bin/pip install playwright img2pdf
 .venv/bin/playwright install chromium
 ```
 
 That downloads a headless Chromium (~150 MB) that the tool uses to get past
-Cloudflare — a one-time thing.
+Cloudflare — a one-time thing. (`img2pdf` is only needed for `--phone pdf`; skip
+it if you won't make PDFs.)
 
 ### Optional: run `grab` from anywhere
 
@@ -94,8 +94,9 @@ Paste **chapter** URLs directly (no `--chapters` needed):
 | Flag          | What it does                                                        |
 | ------------- | ------------------------------------------------------------------- |
 | `--chapters`  | which chapters to grab (see table above); requires a **title** URL  |
+| `--phone ...` | phone format(s): `html` (default), `cbz`, `pdf`, `all`, or `none`. List several, e.g. `--phone cbz pdf` |
 | `--lang`      | chapter language, default `en`                                      |
-| `--no-phone`  | skip generating the single-file phone version                       |
+| `--no-phone`  | make no phone file at all (same as `--phone none`)                  |
 | `--headed`    | run a **visible** browser — use if a headless run hits Cloudflare   |
 | `--out DIR`   | where to put the chapter folders (default: current directory)       |
 
@@ -103,36 +104,46 @@ Paste **chapter** URLs directly (no `--chapters` needed):
 
 ## Reading on your phone
 
-1. Download the chapters on your computer **before** you lose signal.
-2. AirDrop the single bundle file (e.g. `the-stellar-swordmaster-ch1-3.html`) to
-   your phone — or drop it into iCloud Drive / Google Drive / Dropbox while you
-   still have wifi. One file per batch holds every chapter.
-3. Open it. Scroll down to read. **Double-tap** to show the zoom bar (`−` / `+`
-   / Fit) and the **☰** chapter menu; pinch to zoom also works.
+Download **before** you lose signal, then move the files across (AirDrop, or drop
+them into iCloud Drive / Google Drive / Dropbox while you still have wifi and let
+them cache offline). Roughly 7–15 MB per chapter, so big batches make big files.
 
-Expect roughly 7–15 MB per chapter, so a big batch makes a big file. Downloading
-~20+ chapters at once produces a very large file that may open slowly — split
-huge runs into a couple of bundles if it gets sluggish (the tool prints the size
-and warns past 60 MB).
+### CBZ + Panels — the smoothest for webtoons (recommended)
 
-### Getting rid of the toolbars while reading (the top/bottom menu)
+```bash
+grab "<title-url>" --chapters 1-10 --phone cbz
+```
 
-If you open the file straight from the iOS **Files** app, you're using its
-Quick Look preview, which keeps a toolbar pinned at the top and bottom — that's
-the viewer, not our file, and it can't be hidden from there. To read truly
-fullscreen:
+1. You get a folder like `The Stellar Swordmaster (cbz)/` with one `.cbz` per
+   chapter.
+2. Install **[Panels](https://apps.apple.com/app/panels/id1236195657)** (free,
+   iOS) — or YACReader on Android/desktop.
+3. AirDrop the whole folder to your phone (**Save to Files**), then in Panels add
+   that folder as a series. Each `.cbz` shows up as a chapter.
+4. Read with continuous vertical scroll, pinch zoom, real chapter list, and **no
+   toolbars** — it's a proper reader, not a browser.
 
-- **iPhone:** open the file in **Safari** (e.g. save it to iCloud Drive, or use
-  a document-browser app like the free *Documents by Readdle*), then tap the
-  Share button → **Add to Home Screen**. Launching it from that home-screen icon
-  opens it as a fullscreen web app with no browser chrome. The file already
-  includes the meta tags that make this work.
-- **Android:** open it with **Chrome** (long-press the file → Open with →
-  Chrome). Chrome auto-hides its toolbar as you scroll, and its menu → *Add to
-  Home screen* gives you a fullscreen launcher too.
+### PDF + Apple Books — zero install
 
-Native pinch-zoom and the double-tap controls work in most viewers regardless —
-the only thing the fullscreen route fixes is the persistent toolbars.
+```bash
+grab "<title-url>" --chapters 1-10 --phone pdf
+```
+
+AirDrop the `.pdf`, tap **Share → Save to Books**. Books reads it fullscreen with
+no chrome, pinch zoom, and remembers your place. (Chapters run together into one
+long document — fine for binge reading.)
+
+### HTML — no apps at all
+
+The default. One self-contained `.html`; open it in any browser, scroll to read,
+**double-tap** for the zoom bar (`−`/`+`/Fit) and the **☰** chapter menu.
+
+> **Heads-up on the HTML route:** opening it from the iOS **Files** app uses the
+> Quick Look preview, which keeps a toolbar pinned top and bottom (that's the
+> viewer, not the file). To go fullscreen, open it in **Safari** and use Share →
+> **Add to Home Screen**, or on Android open it in **Chrome** (its toolbar
+> auto-hides on scroll). This is exactly the fiddliness that CBZ/PDF avoid — so
+> if the toolbars bug you, use `--phone cbz` or `--phone pdf`.
 
 ---
 

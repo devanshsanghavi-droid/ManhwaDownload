@@ -11,13 +11,13 @@ Usage:
     python grab.py "https://mangafire.to/title/<slug>" --chapters 1,3,10-12
     python grab.py "https://mangafire.to/title/<slug>" --chapters latest
 
-Outputs:
-  <chapter>/reader.html  — one per chapter, for the computer; black bg,
-                 zoom (+/-/0, Ctrl+scroll), prev/next chapter links.
-  <slug>-ch<a>-<b>.html  — ONE file for the whole batch, for the phone: every
-                 requested chapter bundled in a single self-contained file
-                 (images embedded). Double-tap for on-screen zoom (−/+/Fit) and
-                 a chapter menu; pinch-to-zoom also works. Skip with --no-phone.
+Outputs (always: <chapter>/reader.html per chapter, for the computer).
+Phone formats via --phone (default html; use "all" or list several):
+  cbz   one .cbz per chapter in a series folder — best for manga-reader apps
+        like Panels / YACReader (continuous webtoon scroll, per-chapter).
+  pdf   one PDF for the whole batch — opens in Apple Books (needs img2pdf).
+  html  ONE self-contained file for the batch; double-tap for zoom (−/+/Fit)
+        and a chapter menu; works in any browser. Skip everything with --no-phone.
 
 How it works: mangafire's reader gets its data from /api/chapters/<id> and
 /api/titles/<id>/chapters. We load the site once in a real (Playwright)
@@ -34,6 +34,7 @@ import json
 import re
 import sys
 import time
+import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -515,6 +516,54 @@ def write_combined_phone_file(out_dir: Path, group) -> Path:
     return out
 
 
+def pad_chapter(number_str: str) -> str:
+    """Zero-pad a chapter number so filenames sort correctly in reader apps:
+    1 -> '0001', 10 -> '0010', 0.5 -> '0000.5', 12.5 -> '0012.5'."""
+    f = float(number_str)
+    i = int(f)
+    if f == i:
+        return f"{i:04d}"
+    frac = number_str.split(".", 1)[1] if "." in number_str else str(f).split(".")[1]
+    return f"{i:04d}.{frac}"
+
+
+def write_cbz_files(out_dir: Path, group):
+    """Write one .cbz per chapter into a series folder (the layout manga
+    readers like Panels/YACReader expect: folder = series, file = chapter).
+    Returns (series_folder, [cbz_paths])."""
+    series = group[0][1]["name"]
+    series_dir = out_dir / (sanitize(series) + " (cbz)")
+    series_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for folder, meta, saved in group:
+        num = meta["number_str"]
+        cbz = series_dir / (sanitize(f"{series} - Chapter {pad_chapter(num)}") + ".cbz")
+        # ZIP_STORED: the pages are already-compressed JPEGs, so don't re-deflate.
+        with zipfile.ZipFile(cbz, "w", zipfile.ZIP_STORED) as z:
+            for i, n in enumerate(saved, 1):
+                z.write(folder / n, f"{i:03d}{Path(n).suffix}")
+        paths.append(cbz)
+    return series_dir, paths
+
+
+def write_pdf_bundle(out_dir: Path, group) -> Path:
+    """Combine every chapter's pages into ONE PDF (for Apple Books etc.).
+    Uses img2pdf, which embeds the JPEGs as-is (no quality loss, small file)."""
+    import img2pdf  # lazy: only needed for --phone pdf
+
+    slug = group[0][1]["slug"]
+    lo = group[0][1]["number_str"]
+    hi = group[-1][1]["number_str"]
+    title = f"{group[0][1]['name']} Ch. {lo}" + (f"-{hi}" if len(group) > 1 else "")
+
+    image_paths = [str(folder / n) for folder, _, saved in group for n in saved]
+    fname = sanitize(f"{slug}-ch{lo}" + (f"-{hi}" if len(group) > 1 else "")) + ".pdf"
+    out = out_dir / fname
+    with open(out, "wb") as f:
+        f.write(img2pdf.convert(image_paths, title=title))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -527,13 +576,24 @@ def main():
     ap.add_argument("urls", nargs="+", help="chapter URL(s), or one title URL with --chapters")
     ap.add_argument("--chapters", help="which chapters: e.g. 5, 5-10, 1,3,7-9, latest")
     ap.add_argument("--lang", default="en", help="chapter language (default: en)")
+    ap.add_argument("--phone", nargs="+", default=["html"],
+                    choices=["html", "cbz", "pdf", "all", "none"],
+                    help="phone format(s): html (default self-contained reader), "
+                         "cbz (manga-reader apps like Panels), pdf (Apple Books), "
+                         "all, or none")
     ap.add_argument("--no-phone", action="store_true",
-                    help="skip the single-file phone version")
+                    help="alias for --phone none")
     ap.add_argument("--headed", action="store_true",
                     help="run a visible browser (use if Cloudflare blocks headless)")
     ap.add_argument("--out", default=".",
                     help="parent directory for chapter folders (default: current dir)")
     args = ap.parse_args()
+
+    formats = set(args.phone)
+    if "all" in formats:
+        formats = {"html", "cbz", "pdf"}
+    if "none" in formats or args.no_phone:
+        formats = set()
 
     out_dir = Path(args.out).expanduser()
     first = args.urls[0]
@@ -628,18 +688,43 @@ def main():
     print(f"\n✓ {len(results)} chapter(s) downloaded to {out_dir.resolve()}")
     print(f"✓ computer: open {results[0][0].resolve() / 'reader.html'}")
 
-    # ---- one combined phone file per series (all its chapters in one file) --
-    if not args.no_phone:
+    # ---- phone outputs, grouped by series, in the requested format(s) ------
+    if formats:
         groups = {}
         for res in results:
             groups.setdefault(res[1]["slug"], []).append(res)
-        print("✓ phone   : one file has everything — AirDrop / copy it to your phone:")
+
+        def mb(p):
+            return p.stat().st_size / 1_000_000
+
         for grp in groups.values():
             grp.sort(key=lambda r: r[1]["number"])
-            bundle = write_combined_phone_file(out_dir, grp)
-            mb = bundle.stat().st_size / 1_000_000
-            note = "  (large — may open slowly)" if mb > 60 else ""
-            print(f"    {bundle.resolve()}  [{mb:.0f} MB, {len(grp)} chapters]{note}")
+
+            if "cbz" in formats:
+                series_dir, cbzs = write_cbz_files(out_dir, grp)
+                total = sum(mb(p) for p in cbzs)
+                print(f"\n✓ phone · CBZ (best for manga apps like Panels):")
+                print(f"    AirDrop this folder, then import it in Panels/YACReader "
+                      f"as a series:")
+                print(f"    {series_dir.resolve()}/  "
+                      f"[{len(cbzs)} chapter files, {total:.0f} MB]")
+
+            if "pdf" in formats:
+                try:
+                    pdf = write_pdf_bundle(out_dir, grp)
+                    print(f"\n✓ phone · PDF (open in Apple Books):")
+                    print(f"    AirDrop it, then tap Share → Save to Books:")
+                    print(f"    {pdf.resolve()}  [{mb(pdf):.0f} MB]")
+                except ImportError:
+                    print("\n! PDF skipped: img2pdf isn't installed. "
+                          "Run:  .venv/bin/pip install img2pdf", file=sys.stderr)
+
+            if "html" in formats:
+                bundle = write_combined_phone_file(out_dir, grp)
+                note = "  (large — may open slowly)" if mb(bundle) > 60 else ""
+                print(f"\n✓ phone · HTML (self-contained, opens in any browser):")
+                print(f"    {bundle.resolve()}  "
+                      f"[{mb(bundle):.0f} MB, {len(grp)} chapters]{note}")
 
 
 if __name__ == "__main__":

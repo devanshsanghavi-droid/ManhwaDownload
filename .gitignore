@@ -6,6 +6,9 @@ __pycache__/
 # Downloaded chapters + generated phone bundles (these stay local, not in git)
 *-chapter-*/
 *-ch*.html
+*-ch*.pdf
+*.cbz
+* (cbz)/
 
 # macOS
 .DS_Store
