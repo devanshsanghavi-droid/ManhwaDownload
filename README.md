@@ -123,19 +123,26 @@ Step by step, from download to reading in Panels:
 2. **Install Panels** on the iPhone — [App Store link](https://apps.apple.com/app/panels/id1236195657)
    (free). *(Android/desktop: use YACReader or the CBZ reader of your choice —
    the steps are the same idea.)*
-3. **Get the folder onto the phone.** In Finder, right-click the whole `(cbz)`
-   folder → **Share → AirDrop** → your iPhone. On the phone tap **Accept →
-   Save to Files**, and put it somewhere like *On My iPhone → Panels* or just
-   *Downloads*. (No AirDrop? Copy the folder into iCloud Drive while on wifi and
-   let it download to the phone before you fly.)
-4. **Import into Panels.** Open Panels → tap the **+** (Add) button →
-   **Import from Files** (or **Files**) → browse to the folder you saved →
-   select it (or select all the `.cbz` files inside). Panels groups them into one
-   series, each `.cbz` a chapter, in order.
-5. **Read.** Open the series, tap chapter 1. In Settings/appearance pick
-   **Webtoon** (or "Continuous vertical") reading mode for the seamless top-to-
-   bottom scroll manhwa is meant for. Pinch to zoom, swipe between chapters, and
-   there are no browser toolbars — it remembers where you left off.
+3. **Get the folder onto the phone — into a LOCAL folder.** In Finder, right-click
+   the whole `(cbz)` folder → **Share → AirDrop** → your iPhone → **Accept →
+   Save to Files**, and save it under **On My iPhone** (e.g. make a
+   *On My iPhone → Manhwa* folder). Keep it **local**, not iCloud-only, or it
+   won't open with no signal. (No AirDrop? Copy it into iCloud Drive on wifi,
+   then in Files tap the ⬇︎ to download it locally before you fly.)
+4. **Point Panels at it — "Choose library".** On Panels' *Your Panels library*
+   screen, tap **Choose library** (not *Skip* — Skip buries comics in the app's
+   private folder). In the folder browser, pick the **parent** folder that
+   *contains* your `(cbz)` folder (e.g. the *Manhwa* folder). Panels scans it and
+   shows each `(cbz)` folder as a series with its chapters in order. *(You can
+   also select the `(cbz)` folder itself — its `.cbz` files then show up as the
+   chapters.)* Adding more series later is automatic: just drop new `(cbz)`
+   folders into that same library folder.
+5. **Read.** Open the series, tap chapter 1. In the reader's settings pick
+   **Webtoon** (or "Continuous vertical") mode for the seamless top-to-bottom
+   scroll manhwa is meant for. Pinch to zoom, swipe between chapters, no browser
+   toolbars, and it remembers where you left off.
+6. **Sanity check before the flight:** turn on Airplane Mode and open a chapter —
+   if it loads, your files are truly local and offline-ready.
 
 ### PDF + Apple Books — zero install
 
