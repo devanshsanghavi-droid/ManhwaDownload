@@ -1,7 +1,20 @@
 #!/bin/sh
-# Convenience wrapper: runs grab.py inside this repo's virtualenv,
-# from wherever the repo lives. Falls back to plain python3 if no venv.
-DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+# Convenience wrapper: runs grab.py inside this repo's virtualenv, from wherever
+# the repo lives — even when this script is invoked through a symlink on PATH.
+# Falls back to plain python3 if no venv is present.
+
+# Resolve the real location of this script, following any symlink chain.
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
+    LINKDIR="$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    case "$SOURCE" in
+        /*) ;;                       # absolute link target
+        *) SOURCE="$LINKDIR/$SOURCE" ;;   # relative link target
+    esac
+done
+DIR="$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)"
+
 if [ -x "$DIR/.venv/bin/python" ]; then
     exec "$DIR/.venv/bin/python" "$DIR/grab.py" "$@"
 else

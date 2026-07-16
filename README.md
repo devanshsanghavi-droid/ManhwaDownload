@@ -39,18 +39,20 @@ python3 -m venv .venv
 That downloads a headless Chromium (~150 MB) that the tool uses to get past
 Cloudflare — a one-time thing.
 
-### Optional: a short command
+### Optional: run `grab` from anywhere
+
+The included `grab` wrapper runs the script inside the virtualenv so you don't
+have to type `.venv/bin/python grab.py` every time. It locates its own repo even
+when called through a symlink, so you can drop a link on your PATH:
 
 ```bash
-# from inside the repo
 chmod +x grab
-./grab --help
+ln -sf "$(pwd)/grab" /opt/homebrew/bin/grab   # Apple Silicon; or /usr/local/bin on Intel
 ```
 
-The included `grab` wrapper just runs the script inside the virtualenv so you
-don't have to type `.venv/bin/python grab.py` every time. If you cloned it
-somewhere other than `~/manhwa-grab`, edit the two paths at the top of `grab`,
-or just call the script directly (see below).
+Now `grab ...` works from any folder, and chapters download into whatever
+directory you're currently in. (Without this, just call it by full path, e.g.
+`~/manhwa-grab/grab ...`.)
 
 ---
 
