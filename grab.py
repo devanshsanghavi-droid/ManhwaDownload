@@ -579,6 +579,26 @@ def write_cbz_files(out_dir: Path, group, lang: str = "en"):
     return series_dir, paths
 
 
+def write_merged_cbz(out_dir: Path, group, lang: str = "en") -> Path:
+    """Combine the whole batch into ONE .cbz — a single continuous comic with
+    every chapter's pages in order. One file to drag over, one smooth scroll.
+    Returns the .cbz path."""
+    series = group[0][1]["name"]
+    lo = group[0][1]["number_str"]
+    hi = group[-1][1]["number_str"]
+    span = lo if len(group) == 1 else f"{lo}-{hi}"
+    total = sum(len(saved) for _, _, saved in group)
+    cbz = out_dir / (_fs_safe(f"{series} - Ch {span}") + ".cbz")
+    info = _comicinfo_xml(series, lo, f"Chapters {span}", total, lang)
+    with zipfile.ZipFile(cbz, "w", zipfile.ZIP_STORED) as z:
+        z.writestr("ComicInfo.xml", info)
+        # chapter-then-page prefix keeps every page globally ordered
+        for ci, (folder, meta, saved) in enumerate(group, 1):
+            for pi, n in enumerate(saved, 1):
+                z.write(folder / n, f"{ci:03d}_{pi:03d}{Path(n).suffix}")
+    return cbz
+
+
 def write_pdf_bundle(out_dir: Path, group) -> Path:
     """Combine every chapter's pages into ONE PDF (for Apple Books etc.).
     Uses img2pdf, which embeds the JPEGs as-is (no quality loss, small file)."""
@@ -614,6 +634,9 @@ def main():
                     help="phone format(s): html (default self-contained reader), "
                          "cbz (manga-reader apps like Panels), pdf (Apple Books), "
                          "all, or none")
+    ap.add_argument("--merge", action="store_true",
+                    help="for cbz: combine the whole batch into ONE .cbz "
+                         "(a single continuous comic) instead of one per chapter")
     ap.add_argument("--no-phone", action="store_true",
                     help="alias for --phone none")
     ap.add_argument("--headed", action="store_true",
@@ -734,13 +757,19 @@ def main():
             grp.sort(key=lambda r: r[1]["number"])
 
             if "cbz" in formats:
-                series_dir, cbzs = write_cbz_files(out_dir, grp, args.lang)
-                total = sum(mb(p) for p in cbzs)
                 print(f"\n✓ phone · CBZ (best for manga apps like Panels):")
-                print(f"    AirDrop this folder, then import it in Panels/YACReader "
-                      f"as a series:")
-                print(f"    {series_dir.resolve()}/  "
-                      f"[{len(cbzs)} chapter files, {total:.0f} MB]")
+                if args.merge:
+                    cbz = write_merged_cbz(out_dir, grp, args.lang)
+                    print(f"    ONE file, all chapters, continuous scroll — "
+                          f"drag it into Panels and read:")
+                    print(f"    {cbz.resolve()}  [{mb(cbz):.0f} MB]")
+                else:
+                    series_dir, cbzs = write_cbz_files(out_dir, grp, args.lang)
+                    total = sum(mb(p) for p in cbzs)
+                    print(f"    AirDrop this folder, then import it in "
+                          f"Panels/YACReader as a series (or add --merge for one file):")
+                    print(f"    {series_dir.resolve()}/  "
+                          f"[{len(cbzs)} chapter files, {total:.0f} MB]")
 
             if "pdf" in formats:
                 try:

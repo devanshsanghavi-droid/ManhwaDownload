@@ -95,6 +95,7 @@ Paste **chapter** URLs directly (no `--chapters` needed):
 | ------------- | ------------------------------------------------------------------- |
 | `--chapters`  | which chapters to grab (see table above); requires a **title** URL  |
 | `--phone ...` | phone format(s): `html` (default), `cbz`, `pdf`, `all`, or `none`. List several, e.g. `--phone cbz pdf` |
+| `--merge`     | with `--phone cbz`: combine the whole batch into **one** `.cbz` (single continuous comic) instead of one per chapter |
 | `--lang`      | chapter language, default `en`                                      |
 | `--no-phone`  | make no phone file at all (same as `--phone none`)                  |
 | `--headed`    | run a **visible** browser — use if a headless run hits Cloudflare   |
@@ -110,9 +111,19 @@ them cache offline). Roughly 7–15 MB per chapter, so big batches make big file
 
 ### CBZ + Panels — the smoothest for webtoons (recommended)
 
+**Simplest — one file for the whole batch (`--merge`):**
+
 ```bash
-grab "<title-url>" --chapters 1-10 --phone cbz
+grab "<title-url>" --chapters 1-10 --phone cbz --merge --out ~/Manhwa
 ```
+
+This makes a single `.cbz` like `Series - Ch 1-10.cbz` containing every chapter's
+pages in order. Drag that **one file** into Panels (via the Files app or a
+cable), open it, set Webtoon mode once, and read the whole run as one continuous
+scroll. Nothing to group, one thing to move. (Downside: no chapter list — it's
+one long comic. Drop `--merge` if you want per-chapter navigation instead.)
+
+The per-chapter version (below) keeps chapters separate as a browsable series.
 
 Step by step, from download to reading in Panels:
 
