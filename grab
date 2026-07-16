@@ -1,0 +1,9 @@
+#!/bin/sh
+# Convenience wrapper: runs grab.py inside this repo's virtualenv,
+# from wherever the repo lives. Falls back to plain python3 if no venv.
+DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+if [ -x "$DIR/.venv/bin/python" ]; then
+    exec "$DIR/.venv/bin/python" "$DIR/grab.py" "$@"
+else
+    exec python3 "$DIR/grab.py" "$@"
+fi

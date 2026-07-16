@@ -1,0 +1,10 @@
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Downloaded chapters (the whole point is these stay local, not in git)
+*-chapter-*/
+
+# macOS
+.DS_Store
