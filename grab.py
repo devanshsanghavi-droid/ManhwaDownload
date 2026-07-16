@@ -717,10 +717,10 @@ def main():
     ap.add_argument("--merge", action="store_true",
                     help="for cbz: combine each group into ONE .cbz "
                          "(a single continuous comic) instead of one per chapter")
-    ap.add_argument("--group-size", type=int, default=10, metavar="N",
+    ap.add_argument("--group-size", type=int, default=0, metavar="N",
                     help="split the run into groups of N chapters, each written as "
                          "its own file(s) as it finishes — a failsafe for long runs "
-                         "(default 10; use 0 for a single group / one file)")
+                         "(default 0 = one batch / one file; e.g. 10 to chunk)")
     ap.add_argument("--workers", type=int, default=8, metavar="N",
                     help="how many page images to download in parallel (default 8)")
     ap.add_argument("--no-phone", action="store_true",
