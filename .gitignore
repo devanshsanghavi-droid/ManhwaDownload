@@ -3,8 +3,9 @@
 __pycache__/
 *.pyc
 
-# Downloaded chapters (the whole point is these stay local, not in git)
+# Downloaded chapters + generated phone bundles (these stay local, not in git)
 *-chapter-*/
+*-ch*.html
 
 # macOS
 .DS_Store

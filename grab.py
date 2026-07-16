@@ -11,12 +11,13 @@ Usage:
     python grab.py "https://mangafire.to/title/<slug>" --chapters 1,3,10-12
     python grab.py "https://mangafire.to/title/<slug>" --chapters latest
 
-Each chapter becomes a folder with numbered pages plus:
-  reader.html  — open on the computer; black bg, zoom (+/-/0, Ctrl+scroll),
-                 prev/next chapter links when you grab several at once
-  *-phone.html — single self-contained file (images embedded); AirDrop / copy
-                 this ONE file to the phone and open it from the Files app.
-                 Pinch to zoom. Skip with --no-phone.
+Outputs:
+  <chapter>/reader.html  — one per chapter, for the computer; black bg,
+                 zoom (+/-/0, Ctrl+scroll), prev/next chapter links.
+  <slug>-ch<a>-<b>.html  — ONE file for the whole batch, for the phone: every
+                 requested chapter bundled in a single self-contained file
+                 (images embedded). Double-tap for on-screen zoom (−/+/Fit) and
+                 a chapter menu; pinch-to-zoom also works. Skip with --no-phone.
 
 How it works: mangafire's reader gets its data from /api/chapters/<id> and
 /api/titles/<id>/chapters. We load the site once in a real (Playwright)
@@ -313,24 +314,151 @@ __IMAGES__
 </html>
 """
 
-# The phone file must work with JavaScript disabled (iOS Files preview):
-# plain HTML, embedded images, native pinch-to-zoom.
-PHONE_HTML = """<!DOCTYPE html>
+# One self-contained file holding EVERY requested chapter (images embedded).
+# Fullscreen-web-app meta tags, on-screen zoom controls (double-tap to toggle),
+# a chapter menu, and native pinch-to-zoom.
+PHONE_BUNDLE_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>__TITLE__</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  html, body { margin: 0; padding: 0; background: #000; }
-  img { display: block; width: 100%; height: auto; margin: 0; }
-  footer { color: #555; font: 12px -apple-system, system-ui, sans-serif;
-           text-align: center; padding: 24px 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #000; touch-action: manipulation; }
+  #strip { width: 100%; margin: 0 auto; }
+  #strip img { display: block; width: 100%; height: auto; margin: 0; }
+  .divider {
+    color: #8ab4f8; text-align: center; letter-spacing: .02em;
+    font: 600 15px -apple-system, system-ui, sans-serif;
+    padding: 30px 12px; border-top: 1px solid #1a1a1a; scroll-margin-top: 0;
+  }
+  .divider:first-child { border-top: none; }
+  /* floating control bar — hidden until you double-tap */
+  #bar {
+    position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(160%);
+    display: flex; gap: 6px; align-items: center; z-index: 20;
+    background: rgba(22,22,24,.92); border: 1px solid #333; border-radius: 999px;
+    padding: 8px 10px; transition: transform .22s ease; -webkit-backdrop-filter: blur(8px);
+  }
+  #bar.show { transform: translateX(-50%) translateY(0); }
+  #bar button {
+    color: #eee; background: #2c2c30; border: none; border-radius: 999px;
+    font: 600 17px -apple-system, system-ui, sans-serif; min-width: 46px; height: 42px;
+    padding: 0 14px;
+  }
+  #bar button:active { background: #3a3a40; }
+  #bar .z { color: #9aa; font-size: 13px; min-width: 50px; text-align: center;
+            font-variant-numeric: tabular-nums; }
+  /* chapter menu overlay */
+  #toc {
+    position: fixed; inset: 0; z-index: 30; display: none; overflow: auto;
+    background: rgba(0,0,0,.95);
+    padding: calc(22px + env(safe-area-inset-top)) 0 24px;
+  }
+  #toc.show { display: block; }
+  #toc h2 { color: #fff; text-align: center; margin: 4px 0 16px;
+            font: 600 17px -apple-system, system-ui, sans-serif; }
+  #toc a { display: block; color: #ddd; text-decoration: none; padding: 15px 26px;
+           border-top: 1px solid #191919; font: 16px -apple-system, system-ui, sans-serif; }
+  #toc a:active { background: #161616; }
+  #hint {
+    position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top));
+    transform: translateX(-50%); z-index: 15; color: #ccc;
+    background: rgba(0,0,0,.72); border: 1px solid #333; border-radius: 8px;
+    padding: 8px 14px; font: 13px -apple-system, system-ui, sans-serif;
+    transition: opacity .4s;
+  }
 </style>
 </head>
 <body>
-__IMAGES__
-<footer>__TITLE__ — end</footer>
+<div id="strip">
+__SECTIONS__
+</div>
+
+<div id="hint">Double-tap for zoom &amp; chapters</div>
+
+<div id="bar">
+  <button id="toc-btn" title="chapters">☰</button>
+  <button data-z="-15">−</button>
+  <span class="z" id="zlabel">100%</span>
+  <button data-z="15">+</button>
+  <button id="fit">Fit</button>
+</div>
+
+<div id="toc"><h2>__TITLE__</h2>
+__TOCLINKS__
+</div>
+
+<script>
+  const KEY = 'bundle:' + document.title;
+  const strip = document.getElementById('strip');
+  const bar = document.getElementById('bar');
+  const toc = document.getElementById('toc');
+  const zlabel = document.getElementById('zlabel');
+  const hint = document.getElementById('hint');
+  let zoom = 100, saveTimer;
+
+  function applyZoom(save = true) {
+    zoom = Math.min(300, Math.max(40, Math.round(zoom)));
+    strip.style.width = zoom + '%';        // >100% => image overflows, page pans
+    zlabel.textContent = zoom + '%';
+    if (save) persist();
+  }
+  function persist() {
+    try {
+      const d = document.documentElement;
+      const frac = d.scrollHeight > innerHeight ? scrollY / (d.scrollHeight - innerHeight) : 0;
+      localStorage.setItem(KEY, JSON.stringify({ zoom, frac }));
+    } catch (e) {}
+  }
+  function zoomBy(delta) {
+    const d = document.documentElement;
+    const frac = d.scrollHeight > innerHeight ? scrollY / (d.scrollHeight - innerHeight) : 0;
+    zoom += delta; applyZoom();
+    requestAnimationFrame(() => scrollTo(0, frac * (d.scrollHeight - innerHeight)));
+  }
+
+  document.querySelectorAll('#bar button[data-z]').forEach(b =>
+    b.addEventListener('click', () => zoomBy(parseInt(b.dataset.z))));
+  document.getElementById('fit').addEventListener('click', () => { zoom = 100; applyZoom(); });
+  document.getElementById('toc-btn').addEventListener('click', () => toc.classList.add('show'));
+  toc.addEventListener('click', (e) => {
+    if (e.target.tagName === 'A' || e.target === toc) toc.classList.remove('show');
+  });
+
+  // Double-tap toggles the control bar. touch-action:manipulation disables the
+  // browser's own double-tap-zoom, so this is free to reuse — pinch-zoom still works.
+  let lastT = 0, lastX = 0, lastY = 0;
+  addEventListener('touchend', (e) => {
+    if (!e.changedTouches.length) return;
+    const t = e.changedTouches[0], now = Date.now();
+    if (now - lastT < 320 && Math.abs(t.clientX - lastX) < 40 && Math.abs(t.clientY - lastY) < 40) {
+      bar.classList.toggle('show'); lastT = 0;
+    } else { lastT = now; lastX = t.clientX; lastY = t.clientY; }
+  }, { passive: true });
+  addEventListener('dblclick', () => bar.classList.toggle('show'));  // desktop
+
+  addEventListener('scroll', () => { clearTimeout(saveTimer); saveTimer = setTimeout(persist, 300); },
+                  { passive: true });
+
+  // restore zoom + reading position; fade out the hint
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (s) {
+      zoom = s.zoom || 100; applyZoom(false);
+      addEventListener('load', () => {
+        const d = document.documentElement;
+        scrollTo(0, (s.frac || 0) * (d.scrollHeight - innerHeight));
+      });
+    } else applyZoom(false);
+  } catch (e) { applyZoom(false); }
+  setTimeout(() => { hint.style.opacity = 0; setTimeout(() => hint.remove(), 500); }, 3500);
+</script>
 </body>
 </html>
 """
@@ -349,15 +477,40 @@ def write_reader(folder: Path, image_names, title: str, prev=None, next_=None):
     (folder / "reader.html").write_text(html, encoding="utf-8")
 
 
-def write_phone_file(folder: Path, image_names, title: str) -> Path:
-    parts = []
-    for i, n in enumerate(image_names):
-        data = (folder / n).read_bytes()
-        ct = EXT_CT.get(Path(n).suffix.lower(), "image/jpeg")
-        parts.append(f'<img src="data:{ct};base64,{base64.b64encode(data).decode()}" '
-                     f'alt="page {i+1}">')
-    html = PHONE_HTML.replace("__TITLE__", title).replace("__IMAGES__", "\n".join(parts))
-    out = folder / f"{folder.name}-phone.html"
+def _embed_img(folder: Path, name: str, alt: str) -> str:
+    data = (folder / name).read_bytes()
+    ct = EXT_CT.get(Path(name).suffix.lower(), "image/jpeg")
+    return f'<img src="data:{ct};base64,{base64.b64encode(data).decode()}" alt="{alt}">'
+
+
+def write_combined_phone_file(out_dir: Path, group) -> Path:
+    """Bundle every chapter in `group` into ONE self-contained file.
+
+    group: list of (folder, meta, saved_names), sorted by chapter number.
+    Returns the path to the written file.
+    """
+    series = group[0][1]["name"]
+    slug = group[0][1]["slug"]
+    lo = group[0][1]["number_str"]
+    hi = group[-1][1]["number_str"]
+    title = f"{series} — Ch. {lo}" + (f"–{hi}" if len(group) > 1 else "")
+
+    sections, toc_links = [], []
+    for idx, (folder, meta, saved) in enumerate(group):
+        anchor = f"ch{idx}"
+        label = f"Chapter {meta['number_str']}"
+        toc_links.append(f'<a href="#{anchor}">{label}</a>')
+        imgs = "\n".join(_embed_img(folder, n, f"{label} p{i+1}")
+                         for i, n in enumerate(saved))
+        sections.append(f'<div class="divider" id="{anchor}">{label}</div>\n{imgs}')
+
+    html = (PHONE_BUNDLE_HTML
+            .replace("__TITLE__", title)
+            .replace("__SECTIONS__", "\n".join(sections))
+            .replace("__TOCLINKS__", "\n".join(toc_links)))
+
+    fname = sanitize(f"{slug}-ch{lo}" + (f"-{hi}" if len(group) > 1 else "")) + ".html"
+    out = out_dir / fname
     out.write_text(html, encoding="utf-8")
     return out
 
@@ -459,9 +612,8 @@ def main():
     if not results:
         sys.exit("\n✗ Nothing downloaded.")
 
-    # ---- write readers (with prev/next links across this batch) -----------
+    # ---- per-chapter desktop readers (with prev/next links) ---------------
     results.sort(key=lambda r: r[1]["number"])
-    phone_files = []
     for i, (folder, meta, saved) in enumerate(results):
         title = f"{meta['name']} — Chapter {meta['number_str']}"
         prev = next_ = None
@@ -472,16 +624,22 @@ def main():
             nf, nm, _ = results[i + 1]
             next_ = (f"../{nf.name}/reader.html", f"Ch. {nm['number_str']}")
         write_reader(folder, saved, title, prev, next_)
-        if not args.no_phone:
-            phone_files.append(write_phone_file(folder, saved, title))
 
     print(f"\n✓ {len(results)} chapter(s) downloaded to {out_dir.resolve()}")
-    first_folder = results[0][0]
-    print(f"✓ computer: open {first_folder.resolve() / 'reader.html'}")
-    if phone_files:
-        print("✓ phone   : AirDrop / copy these single files, open from the Files app:")
-        for f in phone_files:
-            print(f"    {f.resolve()}")
+    print(f"✓ computer: open {results[0][0].resolve() / 'reader.html'}")
+
+    # ---- one combined phone file per series (all its chapters in one file) --
+    if not args.no_phone:
+        groups = {}
+        for res in results:
+            groups.setdefault(res[1]["slug"], []).append(res)
+        print("✓ phone   : one file has everything — AirDrop / copy it to your phone:")
+        for grp in groups.values():
+            grp.sort(key=lambda r: r[1]["number"])
+            bundle = write_combined_phone_file(out_dir, grp)
+            mb = bundle.stat().st_size / 1_000_000
+            note = "  (large — may open slowly)" if mb > 60 else ""
+            print(f"    {bundle.resolve()}  [{mb:.0f} MB, {len(grp)} chapters]{note}")
 
 
 if __name__ == "__main__":
