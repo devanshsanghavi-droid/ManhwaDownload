@@ -258,9 +258,18 @@ The default. One self-contained `.html`; open it in any browser, scroll to read,
   every write so a run won't die from it, but for a smooth download point `--out`
   at a plain **local, non-synced** folder (e.g. `~/Manhwa`, not a Downloads or
   Desktop folder that's backed by iCloud).
-- **"API response shape changed" or similar:** MangaFire changed its internal
-  API. The tool depends on `/api/titles/<id>/chapters` and
-  `/api/chapters/<id>`; if the site redesigns, those calls need updating.
+- **`API ... failed (HTTP 403)` / "changed its anti-scraping token":**
+  MangaFire signs every `/api/*` request with a `vrf` token generated in-page by
+  a JS function, `getProtectionToken(fullPath, queryParamsObject)` — the second
+  argument is the request's query params as a **typed** object (e.g.
+  `{language:'en', sort:'number', order:'asc', page:1, limit:100}`, with
+  `page`/`limit` as numbers). The tool builds requests this way and lets the page
+  mint the token (see `api_get` / `_API_GET_JS` in `grab.py`). If MangaFire
+  changes this scheme, a 403 comes back and that code is what needs updating:
+  hook or inspect `getProtectionToken` on a loaded title page to find the new
+  argument shape.
+- **`HTTP 521` / "MangaFire's servers are down":** that's the site's own backend
+  being down (a Cloudflare 5xx), not the tool. Wait a bit and re-run.
 
 ## How it works
 
